@@ -1,0 +1,38 @@
+name: CLARITY Act Vote Watcher
+
+on:
+  schedule:
+    # Co 15 minut. GitHub moze opoznic uruchomienie o kilka minut przy duzym
+    # obciazeniu - dlatego skrypt sam polluje "na zywo" co ~25s przez do 25 min,
+    # gdy wykryje trwajace glosowanie, zamiast polegac wylacznie na czestotliwosci crona.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: clarity-act-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Uruchom watcher
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python watch_vote.py
+
+      - name: Zapisz stan (state.json) z powrotem do repo
+        run: |
+          git config user.name "clarity-act-watcher-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "Update vote watch state [skip ci]"
+          git push
