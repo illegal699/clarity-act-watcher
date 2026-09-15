@@ -9,6 +9,7 @@ Zrodlo danych: oficjalne pliki XML Senate.gov (Legislative Information System).
 Nie wymaga zadnego klucza API ani zewnetrznych bibliotek (tylko stdlib).
 """
 
+import datetime
 import json
 import os
 import time
@@ -21,6 +22,13 @@ import xml.etree.ElementTree as ET
 
 CONGRESS = 119
 SESSION = 2  # 119. Kongres, 2. sesja = rok 2026
+
+# Jednorazowe przypomnienie przed konkretnym, znanym terminem glosowania
+# (cloture na motion to proceed do H.R. 3633, 15.09.2026 ok. 14:15 ET = 18:15 UTC).
+# To NIE jest ogolny mechanizm - po tym glosowaniu mozna usunac/zignorowac,
+# a dla kolejnych terminow trzeba by ustawic nowa date/godzine.
+HEADS_UP_AT_UTC = datetime.datetime(2026, 9, 15, 17, 45, tzinfo=datetime.timezone.utc)
+HEADS_UP_WINDOW_MINUTES = 20  # margines na wypadek opoznienia harmonogramu crona
 
 # Slowa kluczowe do rozpoznania glosowania nad CLARITY Act na liscie glosowan.
 # Dopasowanie jest case-insensitive i sprawdzane w polach issue/question/title/
@@ -214,6 +222,21 @@ def main() -> None:
         return
 
     state = load_state()
+
+    if not state.get("heads_up_sent"):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        minutes_until = (HEADS_UP_AT_UTC - now).total_seconds() / 60
+        if 0 <= minutes_until <= HEADS_UP_WINDOW_MINUTES or (
+            -HEADS_UP_WINDOW_MINUTES <= minutes_until < 0
+        ):
+            send_telegram(
+                "⏰ Przypomnienie: glosowanie cloture ws. CLARITY Act (H.R. 3633) "
+                "ma sie zaczac ok. 14:15 ET (20:15 czasu polskiego) dzisiaj.\n"
+                "Bede sledzic i informowac na biezaco, gdy tylko pojawi sie na "
+                "liscie glosowan Senatu."
+            )
+            state["heads_up_sent"] = True
+            save_state(state)
 
     try:
         votes = fetch_vote_menu()
