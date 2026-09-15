@@ -1,5 +1,6 @@
 {
   "notified_pending": [],
   "done": {},
-  "last_tally": {}
+  "last_tally": {},
+  "heads_up_sent": true
 }
