@@ -56,19 +56,27 @@ def http_get(url: str) -> bytes:
         return resp.read()
 
 
-def send_telegram(text: str) -> None:
+def send_telegram(text: str) -> bool:
+    """Zwraca True tylko jesli Telegram faktycznie potwierdzil dostarczenie."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("[WARN] Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID - wiadomosc nie wyslana:")
         print(text)
-        return
+        return False
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": text}).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=HTTP_HEADERS)
     try:
-        urllib.request.urlopen(req, timeout=15)
-        print(f"[TELEGRAM] Wyslano: {text[:60]}...")
-    except urllib.error.URLError as e:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read()
+        print(f"[TELEGRAM] Wyslano ({resp.status}): {text[:60]}...")
+        return True
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        print(f"[ERROR] Telegram odrzucil wiadomosc (HTTP {e.code}): {detail}")
+        return False
+    except Exception as e:  # noqa: BLE001 - siec bywa zawodna, nie chcemy crashowac joba
         print(f"[ERROR] Wysylka na Telegram nie powiodla sie: {e}")
+        return False
 
 
 def load_state() -> dict:
@@ -162,14 +170,16 @@ def track_vote(state: dict, vote_summary: dict) -> None:
         return
 
     if number not in state["notified_pending"]:
-        send_telegram(
+        sent = send_telegram(
             "🔔 Znaleziono glosowanie ws. CLARITY Act (H.R. 3633)!\n"
             f"Vote #{number} ({vote_summary['date']})\n"
             f"{vote_summary['question'] or vote_summary['title']}\n"
             "Sledze wynik na zywo..."
         )
-        state["notified_pending"].append(number)
-        save_state(state)
+        if sent:
+            state["notified_pending"].append(number)
+            save_state(state)
+        # jesli wysylka sie nie udala, nie zapisujemy - kolejne uruchomienie sprobuje ponownie
 
     deadline = time.time() + LIVE_POLL_BUDGET_SECONDS
     last_tally = state["last_tally"].get(number)
@@ -190,23 +200,27 @@ def track_vote(state: dict, vote_summary: dict) -> None:
         if detail["result"]:
             result_lower = detail["result"].lower()
             icon = "✅" if ("agreed" in result_lower or "passed" in result_lower) else "❌"
-            send_telegram(
+            sent = send_telegram(
                 f"{icon} WYNIK GLOSOWANIA #{number}\n"
                 f"{detail['question']}\n"
                 f"Wymagana wiekszosc: {detail['majority'] or 'zwykla'}\n"
                 f"Wynik: {detail['result_text'] or detail['result']}\n"
                 f"{tally}"
             )
-            state["done"][number] = True
-            state["last_tally"][number] = tally
-            save_state(state)
-            return
+            if sent:
+                state["done"][number] = True
+                state["last_tally"][number] = tally
+                save_state(state)
+                return
+            # jesli wysylka sie nie udala, probujemy ponownie w kolejnej iteracji petli
 
-        if tally != last_tally:
-            send_telegram(f"📊 Trwa glosowanie #{number}:\n{tally}")
-            last_tally = tally
-            state["last_tally"][number] = tally
-            save_state(state)
+        elif tally != last_tally:
+            sent = send_telegram(f"📊 Trwa glosowanie #{number}:\n{tally}")
+            if sent:
+                last_tally = tally
+                state["last_tally"][number] = tally
+                save_state(state)
+            # jesli sie nie udalo, last_tally zostaje stare - sprobujemy wyslac ten sam tally ponownie
 
         time.sleep(LIVE_POLL_INTERVAL_SECONDS)
 
@@ -229,14 +243,15 @@ def main() -> None:
         if 0 <= minutes_until <= HEADS_UP_WINDOW_MINUTES or (
             -HEADS_UP_WINDOW_MINUTES <= minutes_until < 0
         ):
-            send_telegram(
+            sent = send_telegram(
                 "⏰ Przypomnienie: glosowanie cloture ws. CLARITY Act (H.R. 3633) "
                 "ma sie zaczac ok. 14:15 ET (20:15 czasu polskiego) dzisiaj.\n"
                 "Bede sledzic i informowac na biezaco, gdy tylko pojawi sie na "
                 "liscie glosowan Senatu."
             )
-            state["heads_up_sent"] = True
-            save_state(state)
+            if sent:
+                state["heads_up_sent"] = True
+                save_state(state)
 
     try:
         votes = fetch_vote_menu()
