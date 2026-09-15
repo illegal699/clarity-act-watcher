@@ -1,6 +1,12 @@
 {
-  "notified_pending": [],
-  "done": {},
-  "last_tally": {},
+  "notified_pending": [
+    "00234"
+  ],
+  "done": {
+    "00234": true
+  },
+  "last_tally": {
+    "00234": "Tak: 49 / Nie: 50 (obecni bez glosu: , nieobecni: 1)"
+  },
   "heads_up_sent": false
 }
