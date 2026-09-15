@@ -207,6 +207,12 @@ def track_vote(state: dict, vote_summary: dict) -> None:
 
 
 def main() -> None:
+    test_message = os.environ.get("TEST_MESSAGE")
+    if test_message:
+        print("[TEST] Tryb testowy - wysylam wiadomosc testowa na Telegram i koncze.")
+        send_telegram(f"✅ Test polaczenia CLARITY Act Watcher: {test_message}")
+        return
+
     state = load_state()
 
     try:

@@ -6,7 +6,12 @@ on:
     # obciazeniu - dlatego skrypt sam polluje "na zywo" co ~25s przez do 25 min,
     # gdy wykryje trwajace glosowanie, zamiast polegac wylacznie na czestotliwosci crona.
     - cron: "*/15 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      test_message:
+        description: "Podaj dowolny tekst, zeby wyslac testowa wiadomosc na Telegram (pomija sprawdzanie glosowania)"
+        required: false
+        default: ""
 
 concurrency:
   group: clarity-act-watch
@@ -27,6 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_MESSAGE: ${{ github.event.inputs.test_message }}
         run: python watch_vote.py
 
       - name: Zapisz stan (state.json) z powrotem do repo
